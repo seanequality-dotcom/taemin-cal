@@ -8,7 +8,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 body { font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; background: #F4F6FF; min-height: 100vh; }
 button { font-family: inherit; cursor: pointer; border: none; }
-input { font-family: inherit; }
+input, textarea { font-family: inherit; }
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 0 16px; }
 .modal-card { background: #fff; border-radius: 22px; padding: 24px 20px; width: 100%; max-width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
 .tab-bar { display: flex; background: #fff; border-bottom: 1px solid #EBEBFF; position: sticky; top: 0; z-index: 10; }
@@ -20,14 +20,16 @@ input { font-family: inherit; }
 .slot-empty { background: #F8F8FF; border: 1.5px dashed #D0D4FF; text-align: center; color: #BBB; font-size: 14px; }
 .issue-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: #F8F8FF; margin-bottom: 8px; cursor: pointer; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
-.cal-cell { display: flex; flex-direction: column; align-items: center; padding: 3px 2px; border-radius: 10px; min-height: 60px; cursor: pointer; transition: background 0.12s; }
+.cal-cell { display: flex; flex-direction: column; align-items: center; padding: 3px 2px; border-radius: 10px; min-height: 62px; cursor: pointer; transition: background 0.12s; }
 .cal-cell:hover { background: #EEF2FF; }
 .cal-cell.selected { background: #EEF2FF; }
 .day-num { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; }
-.toast { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(79,110,247,0.92); color: #fff; padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 300; display: none; }
+.toast { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(79,110,247,0.92); color: #fff; padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 300; display: none; white-space: nowrap; }
 .btn-primary { padding: 13px; border-radius: 12px; border: none; color: #fff; font-size: 14px; font-weight: 700; font-family: inherit; background: linear-gradient(135deg,#4F6EF7,#7B52E8); }
 .btn-cancel { padding: 13px; border-radius: 12px; border: 1.5px solid #E0E0E0; background: none; color: #888; font-size: 14px; font-family: inherit; }
 .btn-delete { padding: 13px 14px; border-radius: 12px; border: none; background: #FFF0F0; color: #FF5C5C; font-size: 14px; font-weight: 600; font-family: inherit; }
+.notice-box { background: #fff; border-radius: 16px; padding: 14px 16px; box-shadow: 0 2px 12px rgba(79,110,247,0.08); margin-bottom: 14px; border: 1.5px solid #E8EAFF; }
+.notice-textarea { width: 100%; border: none; outline: none; resize: none; font-size: 14px; color: #333; line-height: 1.6; background: transparent; font-family: inherit; }
 </style>
 </head>
 <body>
@@ -36,33 +38,71 @@ input { font-family: inherit; }
     <div><div style="font-size:50px;margin-bottom:16px">👶</div><div style="font-size:16px;font-weight:700">불러오는 중...</div></div>
   </div>
 </div>
-<div class="toast" id="toast">저장 중...</div>
+<div class="toast" id="toast"></div>
 
 <script>
 // ── 상수 ──
 const MEMBERS = [
-  { id: "mom",     label: "엄마",   color: "#FF6B9D", bg: "#FFE8F3", emoji: "👩" },
-  { id: "dad",     label: "아빠",   color: "#4F6EF7", bg: "#E8EEFF", emoji: "👨" },
-  { id: "nanny",   label: "이모님", color: "#34C759", bg: "#E8F8EC", emoji: "👩‍💼" },
-  { id: "grandma", label: "할머니", color: "#FF9500", bg: "#FFF3E0", emoji: "👵" },
+  { id:"mom",     label:"엄마",   color:"#FF6B9D", bg:"#FFE8F3", emoji:"👩" },
+  { id:"dad",     label:"아빠",   color:"#4F6EF7", bg:"#E8EEFF", emoji:"👨" },
+  { id:"nanny",   label:"이모님", color:"#34C759", bg:"#E8F8EC", emoji:"👩‍💼" },
+  { id:"grandma", label:"할머니", color:"#FF9500", bg:"#FFF3E0", emoji:"👵" },
 ];
 const ISSUE_CATS = [
-  { id: "hospital", label: "병원",     emoji: "🏥" },
-  { id: "outing",   label: "외출",     emoji: "🚗" },
-  { id: "school",   label: "어린이집", emoji: "🏫" },
-  { id: "etc",      label: "기타",     emoji: "📝" },
+  { id:"hospital", label:"병원",     emoji:"🏥" },
+  { id:"outing",   label:"외출",     emoji:"🚗" },
+  { id:"school",   label:"어린이집", emoji:"🏫" },
+  { id:"etc",      label:"기타",     emoji:"📝" },
 ];
 const WEEK = ["일","월","화","수","목","금","토"];
+
+// ── 대한민국 공휴일 (2025~2026) ──
+const KR_HOLIDAYS = {
+  // 2025
+  "2025-01-01":"신정","2025-01-28":"설날","2025-01-29":"설날","2025-01-30":"설날",
+  "2025-03-01":"삼일절","2025-05-05":"어린이날","2025-05-06":"어린이날(대체)",
+  "2025-06-06":"현충일","2025-08-15":"광복절",
+  "2025-10-03":"개천절","2025-10-05":"추석","2025-10-06":"추석","2025-10-07":"추석","2025-10-08":"추석(대체)",
+  "2025-10-09":"한글날","2025-12-25":"크리스마스",
+  // 2026
+  "2026-01-01":"신정","2026-02-16":"설날","2026-02-17":"설날","2026-02-18":"설날",
+  "2026-03-01":"삼일절","2026-05-05":"어린이날","2026-05-25":"부처님오신날",
+  "2026-06-06":"현충일","2026-08-15":"광복절",
+  "2026-09-24":"추석","2026-09-25":"추석","2026-09-26":"추석",
+  "2026-10-03":"개천절","2026-10-09":"한글날","2026-12-25":"크리스마스",
+};
+
+// ── JSONBin ──
 const MASTER_KEY = "$2a$10$ew.NesbwuazwqTsBAtBZF.rme2rKXXib1J4xZ916nHVOh8FGy3VkS";
-const BIN_ID_KEY = "taemin_bin_id";
+const FIXED_BIN_ID = "6a3a065df5f4af5e2920dadb";
+
+async function dbLoad() {
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${FIXED_BIN_ID}/latest`, {
+    headers:{"X-Master-Key":MASTER_KEY}
+  });
+  const data = await res.json();
+  return data.record || {schedules:{},issues:{},notice:""};
+}
+async function dbSave() {
+  showToast("저장 중...");
+  try {
+    await fetch(`https://api.jsonbin.io/v3/b/${FIXED_BIN_ID}`, {
+      method:"PUT",
+      headers:{"Content-Type":"application/json","X-Master-Key":MASTER_KEY},
+      body: JSON.stringify(DB)
+    });
+    showToast("저장됨 ✓", 1200);
+  } catch(e) { alert("저장 실패: "+e.message); }
+}
 
 // ── 상태 ──
-let DB = { schedules: {}, issues: {} };
+let DB = { schedules:{}, issues:{}, notice:"" };
 let currentTab = "today";
 let currentMonth = getMonthStr(new Date());
 let selectedDay = null;
 let schedModal = null, schedAm = null, schedPm = null;
 let issueModal = null, issueCat = "hospital", issueMemo = "";
+let noticeSaveTimer = null;
 
 // ── 유틸 ──
 function getTodayStr() {
@@ -76,32 +116,8 @@ function getFirstDow(y,m) { return new Date(y,m-1,1).getDay(); }
 function getWeekday(ds) { return new Date(ds).toLocaleDateString("ko-KR",{weekday:"short"}); }
 function getMember(id) { return MEMBERS.find(m=>m.id===id); }
 function getCat(id) { return ISSUE_CATS.find(c=>c.id===id); }
-
-// ── JSONBin ──
-const FIXED_BIN_ID = "6a3a065df5f4af5e2920dadb";
-
-async function dbLoad() {
-  localStorage.setItem(BIN_ID_KEY, FIXED_BIN_ID);
-  const res = await fetch(`https://api.jsonbin.io/v3/b/${FIXED_BIN_ID}/latest`, {
-    headers:{"X-Master-Key":MASTER_KEY}
-  });
-  const data = await res.json();
-  return data.record || {schedules:{},issues:{}};
-}
-
-async function dbSave() {
-  const binId = localStorage.getItem(BIN_ID_KEY);
-  if (!binId) return;
-  showToast("저장 중...");
-  try {
-    await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-      method:"PUT",
-      headers:{"Content-Type":"application/json","X-Master-Key":MASTER_KEY},
-      body: JSON.stringify(DB)
-    });
-    showToast("저장됨 ✓", 1200);
-  } catch(e) { alert("저장 실패: "+e.message); }
-}
+function isHoliday(ds) { return !!KR_HOLIDAYS[ds]; }
+function getHolidayName(ds) { return KR_HOLIDAYS[ds]||""; }
 
 function showToast(msg, duration=2000) {
   const t = document.getElementById("toast");
@@ -110,28 +126,31 @@ function showToast(msg, duration=2000) {
   t._timer = setTimeout(()=>t.style.display="none", duration);
 }
 
+// ── 노티 저장 (디바운스) ──
+function onNoticeInput(val) {
+  DB.notice = val;
+  clearTimeout(noticeSaveTimer);
+  noticeSaveTimer = setTimeout(()=>dbSave(), 1500);
+}
+
 // ── 렌더 ──
 function render() {
   document.getElementById("app").innerHTML = buildApp();
-  bindEvents();
 }
 
 function buildApp() {
   const today = getTodayStr();
   return `
   <div style="min-height:100vh;background:#F4F6FF;padding-bottom:50px">
-    <!-- 헤더 -->
     <div style="background:linear-gradient(135deg,#4F6EF7,#7B52E8);padding:36px 22px 24px;color:#fff">
       <div style="font-size:12px;opacity:.75;margin-bottom:4px;letter-spacing:1px">태민이 등하원</div>
       <div style="font-size:28px;font-weight:800;letter-spacing:-.5px">누가 데려가요? 👶</div>
-      <div style="margin-top:8px;font-size:12px;opacity:.7">${today.replace(/-/g,".")} (${getWeekday(today)})</div>
+      <div style="margin-top:8px;font-size:12px;opacity:.7">${today.replace(/-/g,".")} (${getWeekday(today)})${isHoliday(today)?" 🎌 "+getHolidayName(today):""}</div>
     </div>
-    <!-- 탭 -->
     <div class="tab-bar">
       <button class="tab-btn ${currentTab==="today"?"active":""}" onclick="switchTab('today')">오늘</button>
       <button class="tab-btn ${currentTab==="calendar"?"active":""}" onclick="switchTab('calendar')">달력</button>
     </div>
-    <!-- 컨텐츠 -->
     <div style="padding:18px 16px 0;max-width:440px;margin:0 auto">
       ${currentTab==="today" ? buildToday(today) : buildCalendar()}
     </div>
@@ -140,18 +159,21 @@ function buildApp() {
   ${buildIssueModal()}`;
 }
 
+// ── 오늘 탭 ──
 function buildToday(today) {
-  const sched = DB.schedules[today] || {};
-  const todayIssues = DB.issues[today] || [];
+  const sched = DB.schedules[today]||{};
+  const todayIssues = DB.issues[today]||[];
+  const todayHoliday = isHoliday(today);
   return `
+  ${todayHoliday?`<div style="background:linear-gradient(135deg,#FF7A7A,#FF5C5C);border-radius:16px;padding:14px 18px;color:#fff;margin-bottom:12px;font-weight:700;font-size:15px">🎌 오늘은 공휴일이에요 — ${getHolidayName(today)}</div>`:""}
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <div style="font-weight:800;font-size:16px;color:#1A1A2E">오늘 등하원 담당</div>
       <button onclick="openSchedModal('${today}')" style="background:#F0F4FF;border-radius:10px;color:#4F6EF7;font-size:13px;padding:7px 14px;font-weight:700">✏️ 수정</button>
     </div>
-    ${buildSlot("am","🌅 오전 등원", sched.am, today)}
+    ${buildSlot("am","🌅 오전 등원",sched.am,today)}
     <div style="height:12px"></div>
-    ${buildSlot("pm","🌇 오후 하원", sched.pm, today)}
+    ${buildSlot("pm","🌇 오후 하원",sched.pm,today)}
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -159,41 +181,34 @@ function buildToday(today) {
       <button onclick="openIssueModal('${today}',null)" style="background:#FFF0F7;border-radius:10px;color:#FF6B9D;font-size:13px;padding:7px 14px;font-weight:700">+ 추가</button>
     </div>
     ${todayIssues.length===0
-      ? `<div style="color:#CCC;font-size:14px;text-align:center;padding:12px 0">등록된 이슈 없음</div>`
-      : todayIssues.map(iss=>{
-          const cat=getCat(iss.cat);
-          return `<div class="issue-item" onclick="openIssueModal('${today}','${iss.id}')">
-            <span style="font-size:20px">${cat?.emoji||"📝"}</span>
-            <div><div style="font-weight:700;font-size:14px;color:#333">${cat?.label||""}</div>${iss.memo?`<div style="font-size:12px;color:#888;margin-top:2px">${iss.memo}</div>`:""}</div>
-          </div>`;
-        }).join("")
+      ?`<div style="color:#CCC;font-size:14px;text-align:center;padding:12px 0">등록된 이슈 없음</div>`
+      :todayIssues.map(iss=>{const cat=getCat(iss.cat);return`<div class="issue-item" onclick="openIssueModal('${today}','${iss.id}')"><span style="font-size:20px">${cat?.emoji||"📝"}</span><div><div style="font-weight:700;font-size:14px;color:#333">${cat?.label||""}</div>${iss.memo?`<div style="font-size:12px;color:#888;margin-top:2px">${iss.memo}</div>`:""}</div></div>`;}).join("")
     }
   </div>`;
 }
 
 function buildSlot(slot, label, memberId, ds) {
   const m = getMember(memberId);
-  if (m) return `
-    <div>
-      <div style="font-size:11px;font-weight:700;color:#BBB;margin-bottom:8px;letter-spacing:.5px">${label}</div>
-      <div class="slot-card" style="background:${m.bg};display:flex;align-items:center;gap:12px" onclick="openSchedModal('${ds}')">
-        <span style="font-size:30px">${m.emoji}</span>
-        <div><div style="font-weight:800;font-size:20px;color:${m.color}">${m.label}</div>
-        <div style="font-size:11px;color:${m.color};opacity:.7">${slot==="am"?"오전 등원 담당":"오후 하원 담당"}</div></div>
-      </div>
-    </div>`;
-  return `
-    <div>
-      <div style="font-size:11px;font-weight:700;color:#BBB;margin-bottom:8px;letter-spacing:.5px">${label}</div>
-      <div class="slot-card slot-empty" onclick="openSchedModal('${ds}')">탭해서 담당자 지정</div>
-    </div>`;
+  if (m) return `<div>
+    <div style="font-size:11px;font-weight:700;color:#BBB;margin-bottom:8px;letter-spacing:.5px">${label}</div>
+    <div class="slot-card" style="background:${m.bg};display:flex;align-items:center;gap:12px" onclick="openSchedModal('${ds}')">
+      <span style="font-size:30px">${m.emoji}</span>
+      <div><div style="font-weight:800;font-size:20px;color:${m.color}">${m.label}</div>
+      <div style="font-size:11px;color:${m.color};opacity:.7">${slot==="am"?"오전 등원 담당":"오후 하원 담당"}</div></div>
+    </div></div>`;
+  return `<div>
+    <div style="font-size:11px;font-weight:700;color:#BBB;margin-bottom:8px;letter-spacing:.5px">${label}</div>
+    <div class="slot-card slot-empty" onclick="openSchedModal('${ds}')">탭해서 담당자 지정</div>
+  </div>`;
 }
 
+// ── 달력 탭 ──
 function buildCalendar() {
   const [vy,vm] = currentMonth.split("-").map(Number);
   const dim=getDaysInMonth(vy,vm), fdow=getFirstDow(vy,vm);
   const today=getTodayStr();
-  let cells = "";
+
+  let cells="";
   for(let i=0;i<fdow;i++) cells+=`<div></div>`;
   for(let i=0;i<dim;i++){
     const day=i+1, ds=`${currentMonth}-${pad(day)}`;
@@ -202,45 +217,69 @@ function buildCalendar() {
     const isToday=ds===today, isSel=ds===selectedDay;
     const dow=(fdow+i)%7;
     const amM=getMember(sched.am), pmM=getMember(sched.pm);
-    const numColor=isToday?"#fff":dow===0?"#FF5C5C":dow===6?"#4F6EF7":"#333";
-    const numBg=isToday?"#4F6EF7":"transparent";
-    cells+=`<div class="cal-cell ${isSel?"selected":""}" onclick="selectDay('${ds}')">
-      <div class="day-num" style="background:${numBg};color:${numColor};font-weight:${(amM||pmM)?700:400}">${day}</div>
-      <div style="display:flex;gap:1px;margin-top:2px;flex-wrap:wrap;justify-content:center">
-        ${amM?`<span style="font-size:12px;line-height:1.2">${amM.emoji}</span>`:""}
-        ${pmM?`<span style="font-size:12px;line-height:1.2">${pmM.emoji}</span>`:""}
+    const hol=isHoliday(ds);
+    const isSun=dow===0, isSat=dow===6;
+    const numColor = isToday?"#fff" : hol?"#FF5C5C" : isSun?"#FF5C5C" : isSat?"#4F6EF7" : "#333";
+    const numBg    = isToday?"#4F6EF7":"transparent";
+    const numWeight= (amM||pmM||hol)?700:400;
+
+    cells+=`<div class="cal-cell${isSel?" selected":""}" onclick="selectDay('${ds}')">
+      <div class="day-num" style="background:${numBg};color:${numColor};font-weight:${numWeight}">${day}</div>
+      <div style="display:flex;gap:1px;margin-top:1px;flex-wrap:wrap;justify-content:center">
+        ${amM?`<span style="font-size:11px;line-height:1.3">${amM.emoji}</span>`:""}
+        ${pmM?`<span style="font-size:11px;line-height:1.3">${pmM.emoji}</span>`:""}
       </div>
-      ${hasIssue?`<div style="width:5px;height:5px;border-radius:50%;background:#FF6B9D;margin-top:2px"></div>`:""}
+      ${hol?`<div style="font-size:8px;color:#FF5C5C;font-weight:700;margin-top:1px;text-align:center;max-width:36px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${getHolidayName(ds)}</div>`:""}
+      ${hasIssue?`<div style="width:5px;height:5px;border-radius:50%;background:#FF6B9D;margin-top:1px"></div>`:""}
     </div>`;
   }
 
-  const detail = selectedDay ? buildDayDetail(selectedDay) : "";
   return `
+  <!-- 노티 박스 -->
+  <div class="notice-box">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="font-size:16px">📌</span>
+      <span style="font-size:13px;font-weight:700;color:#4F6EF7">공유 메모</span>
+      <span style="font-size:11px;color:#BBB;margin-left:auto">자동 저장</span>
+    </div>
+    <textarea class="notice-textarea" id="notice-ta" rows="3" placeholder="가족 공유 메모를 입력하세요 (자동 저장)"
+      oninput="onNoticeInput(this.value)">${DB.notice||""}</textarea>
+  </div>
+
+  <!-- 달력 -->
   <div style="background:#fff;border-radius:20px;box-shadow:0 4px 20px rgba(79,110,247,.09);margin-bottom:14px;overflow:hidden">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid #F2F2FF">
       <button onclick="prevMonth()" style="background:#F0F4FF;border-radius:10px;width:36px;height:36px;font-size:20px;color:#4F6EF7;display:flex;align-items:center;justify-content:center">‹</button>
       <div style="font-weight:800;font-size:17px;color:#1A1A2E">${vy}년 ${vm}월</div>
       <button onclick="nextMonth()" style="background:#F0F4FF;border-radius:10px;width:36px;height:36px;font-size:20px;color:#4F6EF7;display:flex;align-items:center;justify-content:center">›</button>
     </div>
-    <div class="cal-grid" style="padding:8px 10px 4px">
+    <div class="cal-grid" style="padding:8px 8px 4px">
       ${WEEK.map((w,i)=>`<div style="text-align:center;font-size:11px;font-weight:700;color:${i===0?"#FF5C5C":i===6?"#4F6EF7":"#BBB"};padding-bottom:2px">${w}</div>`).join("")}
     </div>
-    <div class="cal-grid" style="padding:0 6px 14px;gap:4px 0">${cells}</div>
+    <div class="cal-grid" style="padding:0 4px 12px;gap:3px 0">${cells}</div>
   </div>
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;padding-left:2px">
+
+  <!-- 범례 -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding-left:2px">
     ${MEMBERS.map(m=>`<div style="display:flex;align-items:center;gap:4px;font-size:12px;color:#666"><span>${m.emoji}</span>${m.label}</div>`).join("")}
+    <div style="display:flex;align-items:center;gap:4px;font-size:12px;color:#FF5C5C">🎌공휴일</div>
     <div style="display:flex;align-items:center;gap:4px;font-size:12px;color:#666"><div style="width:6px;height:6px;border-radius:50%;background:#FF6B9D"></div>이슈</div>
   </div>
-  ${detail}`;
+
+  ${selectedDay ? buildDayDetail(selectedDay) : ""}`;
 }
 
 function buildDayDetail(ds) {
   const sched=DB.schedules[ds]||{}, dayIssues=DB.issues[ds]||[];
+  const hol=isHoliday(ds);
   return `
   <div style="background:#fff;border-radius:18px;padding:18px;box-shadow:0 2px 16px rgba(0,0,0,.07);border:1.5px solid #EBEBFF">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <div style="font-weight:800;font-size:15px;color:#1A1A2E">${ds.slice(5).replace("-","/")} (${getWeekday(ds)})</div>
-      <button onclick="openSchedModal('${ds}')" style="background:#F0F4FF;border-radius:10px;color:#4F6EF7;font-size:13px;padding:7px 12px;font-weight:700">✏️ 담당 수정</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${hol?8:16}px">
+      <div>
+        <div style="font-weight:800;font-size:15px;color:#1A1A2E">${ds.slice(5).replace("-","/")} (${getWeekday(ds)})</div>
+        ${hol?`<div style="font-size:12px;color:#FF5C5C;font-weight:600;margin-top:3px">🎌 ${getHolidayName(ds)}</div>`:""}
+      </div>
+      <button onclick="openSchedModal('${ds}')" style="background:#F0F4FF;border-radius:10px;color:#4F6EF7;font-size:13px;padding:7px 12px;font-weight:700">✏️ 담당</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
       ${[["am","🌅 오전 등원"],["pm","🌇 오후 하원"]].map(([slot,label])=>{
@@ -258,29 +297,23 @@ function buildDayDetail(ds) {
         <button onclick="openIssueModal('${ds}',null)" style="background:#FFF0F7;border-radius:8px;color:#FF6B9D;font-size:13px;padding:6px 12px;font-weight:700">+ 추가</button>
       </div>
       ${dayIssues.length===0?`<div style="color:#CCC;font-size:13px">이슈 없음</div>`
-        :dayIssues.map(iss=>{
-          const cat=getCat(iss.cat);
-          return `<div class="issue-item" onclick="openIssueModal('${ds}','${iss.id}')">
-            <span style="font-size:18px">${cat?.emoji||"📝"}</span>
-            <div><span style="font-weight:700;font-size:13px;color:#333">${cat?.label||""}</span>
-            ${iss.memo?`<span style="font-size:12px;color:#888;margin-left:6px">${iss.memo}</span>`:""}</div>
-          </div>`;
-        }).join("")}
+        :dayIssues.map(iss=>{const cat=getCat(iss.cat);return`<div class="issue-item" onclick="openIssueModal('${ds}','${iss.id}')">
+          <span style="font-size:18px">${cat?.emoji||"📝"}</span>
+          <div><span style="font-weight:700;font-size:13px;color:#333">${cat?.label||""}</span>
+          ${iss.memo?`<span style="font-size:12px;color:#888;margin-left:6px">${iss.memo}</span>`:""}</div>
+        </div>`;}).join("")}
     </div>
   </div>`;
 }
 
+// ── 모달 ──
 function buildSchedModal() {
   if (!schedModal) return "";
-  const btnRow = MEMBERS.map(m=>{
-    const isAmSel=schedAm===m.id, isPmSel=schedPm===m.id;
-    return ``;
-  }).join("");
   return `
   <div class="modal-bg" onclick="if(event.target===this)closeSchedModal()">
     <div class="modal-card">
       <div style="font-weight:800;font-size:17px;color:#1A1A2E;margin-bottom:4px">등하원 담당 설정</div>
-      <div style="font-size:13px;color:#999;margin-bottom:20px">${schedModal.slice(5).replace("-","/")} (${getWeekday(schedModal)})</div>
+      <div style="font-size:13px;color:#999;margin-bottom:20px">${schedModal.slice(5).replace("-","/")} (${getWeekday(schedModal)})${isHoliday(schedModal)?" 🎌":""}</div>
       <div style="font-size:13px;font-weight:700;color:#555;margin-bottom:8px">🌅 오전 등원</div>
       <div style="margin-bottom:16px">${MEMBERS.map(m=>`<button class="member-btn" onclick="toggleAm('${m.id}')" style="background:${schedAm===m.id?m.color:m.bg};color:${schedAm===m.id?"#fff":m.color}">${m.emoji} ${m.label}</button>`).join("")}</div>
       <div style="font-size:13px;font-weight:700;color:#555;margin-bottom:8px">🌇 오후 하원</div>
@@ -295,14 +328,14 @@ function buildSchedModal() {
 
 function buildIssueModal() {
   if (!issueModal) return "";
-  const iss = issueModal.issueId ? (DB.issues[issueModal.ds]||[]).find(i=>i.id===issueModal.issueId) : null;
+  const iss = issueModal.issueId?(DB.issues[issueModal.ds]||[]).find(i=>i.id===issueModal.issueId):null;
   return `
   <div class="modal-bg" onclick="if(event.target===this)closeIssueModal()">
     <div class="modal-card">
       <div style="font-weight:800;font-size:17px;color:#1A1A2E;margin-bottom:4px">${iss?"이슈 수정":"이슈 추가"}</div>
       <div style="font-size:13px;color:#999;margin-bottom:18px">${issueModal.ds.slice(5).replace("-","/")} (${getWeekday(issueModal.ds)})</div>
       <div style="font-size:13px;font-weight:700;color:#555;margin-bottom:10px">카테고리</div>
-      <div style="margin-bottom:18px">${ISSUE_CATS.map(c=>`<button onclick="setIssueCat('${c.id}')" style="padding:8px 14px;border-radius:20px;border:none;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;margin:3px;background:${issueCat===c.id?"#1A1A2E":"#F0F0F8"};color:${issueCat===c.id?"#fff":"#555"};transition:all .15s">${c.emoji} ${c.label}</button>`).join("")}</div>
+      <div style="margin-bottom:18px">${ISSUE_CATS.map(c=>`<button onclick="setIssueCat('${c.id}')" style="padding:8px 14px;border-radius:20px;border:none;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;margin:3px;background:${issueCat===c.id?"#1A1A2E":"#F0F0F8"};color:${issueCat===c.id?"#fff":"#555"}">${c.emoji} ${c.label}</button>`).join("")}</div>
       <div style="font-size:13px;font-weight:700;color:#555;margin-bottom:8px">메모</div>
       <input type="text" id="issue-memo-input" placeholder="내용 입력" value="${issueMemo}"
         onkeydown="if(event.key==='Enter')saveIssueModal()"
@@ -317,54 +350,50 @@ function buildIssueModal() {
   </div>`;
 }
 
-// ── 이벤트 핸들러 ──
-function bindEvents() {}
-
+// ── 핸들러 ──
 function switchTab(tab) { currentTab=tab; render(); }
 function selectDay(ds) { selectedDay=(selectedDay===ds?null:ds); render(); }
 function prevMonth() {
   const [y,m]=currentMonth.split("-").map(Number);
-  const d=new Date(y,m-2,1); currentMonth=getMonthStr(d); selectedDay=null; render();
+  currentMonth=getMonthStr(new Date(y,m-2,1)); selectedDay=null; render();
 }
 function nextMonth() {
   const [y,m]=currentMonth.split("-").map(Number);
-  const d=new Date(y,m,1); currentMonth=getMonthStr(d); selectedDay=null; render();
+  currentMonth=getMonthStr(new Date(y,m,1)); selectedDay=null; render();
 }
 
 function openSchedModal(ds) {
-  schedModal=ds;
-  const s=DB.schedules[ds]||{};
+  schedModal=ds; const s=DB.schedules[ds]||{};
   schedAm=s.am||null; schedPm=s.pm||null; render();
 }
 function closeSchedModal() { schedModal=null; render(); }
 function toggleAm(id) { schedAm=(schedAm===id?null:id); render(); }
 function togglePm(id) { schedPm=(schedPm===id?null:id); render(); }
 async function saveSchedModal() {
-  if (!schedModal) return;
-  if (!schedAm && !schedPm) delete DB.schedules[schedModal];
+  if(!schedModal) return;
+  if(!schedAm&&!schedPm) delete DB.schedules[schedModal];
   else DB.schedules[schedModal]={am:schedAm,pm:schedPm};
   schedModal=null; render(); await dbSave();
 }
 
-function openIssueModal(ds, issueId) {
+function openIssueModal(ds,issueId) {
   issueModal={ds,issueId};
   const iss=issueId?(DB.issues[ds]||[]).find(i=>i.id===issueId):null;
   issueCat=iss?.cat||"hospital"; issueMemo=iss?.memo||""; render();
-  setTimeout(()=>{ const el=document.getElementById("issue-memo-input"); if(el){el.focus();el.value=issueMemo;}},50);
+  setTimeout(()=>{const el=document.getElementById("issue-memo-input");if(el){el.value=issueMemo;el.focus();}},50);
 }
 function closeIssueModal() { issueModal=null; render(); }
-function setIssueCat(cat) { issueCat=cat; render(); setTimeout(()=>{const el=document.getElementById("issue-memo-input");if(el){el.value=issueMemo;el.focus();}},50); }
+function setIssueCat(cat) {
+  issueCat=cat; render();
+  setTimeout(()=>{const el=document.getElementById("issue-memo-input");if(el){el.value=issueMemo;el.focus();}},50);
+}
 async function saveIssueModal() {
-  if (!issueModal) return;
+  if(!issueModal) return;
   const {ds,issueId}=issueModal;
   const memo=document.getElementById("issue-memo-input")?.value||issueMemo;
   let dayIssues=[...(DB.issues[ds]||[])];
-  if (issueId) {
-    const idx=dayIssues.findIndex(i=>i.id===issueId);
-    if(idx>=0) dayIssues[idx]={...dayIssues[idx],cat:issueCat,memo};
-  } else {
-    dayIssues.push({id:Date.now().toString(),cat:issueCat,memo});
-  }
+  if(issueId){const idx=dayIssues.findIndex(i=>i.id===issueId);if(idx>=0)dayIssues[idx]={...dayIssues[idx],cat:issueCat,memo};}
+  else dayIssues.push({id:Date.now().toString(),cat:issueCat,memo});
   DB.issues[ds]=dayIssues; issueModal=null; render(); await dbSave();
 }
 async function deleteIssue(ds,id) {
@@ -374,12 +403,7 @@ async function deleteIssue(ds,id) {
 }
 
 // ── 초기화 ──
-dbLoad().then(data=>{
-  DB=data; render();
-}).catch(e=>{
-  alert("불러오기 실패: "+e.message);
-  render();
-});
+dbLoad().then(data=>{ DB=data; render(); }).catch(e=>{ alert("불러오기 실패: "+e.message); render(); });
 </script>
 </body>
 </html>
