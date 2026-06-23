@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>태민이 등하원 👶</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; background: #F4F6FF; min-height: 100vh; }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// ── 상수 ──
+const MEMBERS = [
+  { id: "mom",     label: "엄마",   color: "#FF6B9D", bg: "#FFE8F3", emoji: "👩" },
+  { id: "dad",     label: "아빠",   color: "#4F6EF7", bg: "#E8EEFF", emoji: "👨" },
+  { id: "nanny",   label: "이모님", color: "#34C759", bg: "#E8F8EC", emoji: "👩‍💼" },
+  { id: "grandma", label: "할머니", color: "#FF9500", bg: "#FFF3E0", emoji: "👵" },
+];
+const ISSUE_CATS = [
+  { id: "hospital", label: "병원",     emoji: "🏥" },
+  { id: "outing",   label: "외출",     emoji: "🚗" },
+  { id: "school",   label: "어린이집", emoji: "🏫" },
+  { id: "etc",      label: "기타",     emoji: "📝" },
+];
+const WEEK = ["일","월","화","수","목","금","토"];
+
+// ── JSONBin ──
+const MASTER_KEY = "$2a$10$ew.NesbwuazwqTsBAtBZF.rme2rKXXib1J4xZ916nHVOh8FGy3VkS";
+// bin ID는 최초 생성 후 여기에 고정됩니다
+let FIXED_BIN_ID = localStorage.getItem("taemin_bin_id") || null;
+
+async function dbLoad() {
+  if (!FIXED_BIN_ID) {
+    const res = await fetch("https://api.jsonbin.io/v3/b", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": MASTER_KEY,
+        "X-Bin-Name": "taemin-calendar",
+        "X-Private": "false"
+      },
+      body: JSON.stringify({ schedules: {}, issues: {} })
+    });
+    const data = await res.json();
+    FIXED_BIN_ID = data.metadata.id;
+    localStorage.setItem("taemin_bin_id", FIXED_BIN_ID);
+    // bin ID를 화면에 alert로 알려줌 (최초 1회)
+    setTimeout(() => alert("📌 Bin ID: " + FIXED_BIN_ID + "\n\n이 ID를 캡처해두세요!\n남편 폰에서도 같은 데이터를 쓰려면 Claude에게 이 ID를 알려주세요."), 1000);
+    return { schedules: {}, issues: {} };
+  }
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${FIXED_BIN_ID}/latest`, {
+    headers: { "X-Master-Key": MASTER_KEY }
+  });
+  const data = await res.json();
+  return data.record || { schedules: {}, issues: {} };
+}
+
+async function dbSave(record) {
+  if (!FIXED_BIN_ID) return;
+  await fetch(`https://api.jsonbin.io/v3/b/${FIXED_BIN_ID}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Master-Key": MASTER_KEY },
+    body: JSON.stringify(record)
+  });
+}
+
+// ── 유틸 ──
+function getTodayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function getDaysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+function getFirstDow(y, m)    { return new Date(y, m-1, 1).getDay(); }
+function getWeekday(ds)        { return new Date(ds).toLocaleDateString("ko-KR", { weekday: "short" }); }
+function getMember(id)         { return MEMBERS.find(m => m.id === id); }
+
+// ── 버튼 컴포넌트 ──
+function MemberBtn({ id, selected, onSelect }) {
+  const m = getMember(id);
+  if (!m) return null;
+  return (
+    <button onClick={() => onSelect(id)} style={{
+      display: "flex", alignItems: "center", gap: 6,
+      padding: "8px 14px", borderRadius: 20, border: "none",
+      background: selected ? m.color : m.bg,
+      color: selected ? "#fff" : m.color,
+      fontWeight: 700, fontSize: 14, transition: "all 0.15s",
+    }}>
+      <span>{m.emoji}</span>{m.label}
+    </button>
+  );
+}
+
+// ── 메인 앱 ──
+function App() {
+  const [schedules,   setSchedules]   = useState({});
+  const [issues,      setIssues]      = useState({});
+  const [loading,     setLoading]     = useState(true);
+  const [saving,      setSaving]      = useState(false);
+  const [tab,         setTab]         = useState("today");
+  const [viewMonth,   setViewMonth]   = useState(() => getTodayStr().slice(0, 7));
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  const [schedModal, setSchedModal] = useState(null);
+  const [schedAm,    setSchedAm]    = useState(null);
+  const [schedPm,    setSchedPm]    = useState(null);
+
+  const [issueModal, setIssueModal] = useState(null);
+  const [issueCat,   setIssueCat]   = useState("hospital");
+  const [issueMemo,  setIssueMemo]  = useState("");
+
+  useEffect(() => {
+    dbLoad()
+      .then(data => { setSchedules(data.schedules || {}); setIssues(data.issues || {}); })
+      .catch(e => { console.error(e); alert("데이터 불러오기 실패: " + e.message); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save(s, i) {
+    setSchedules({...s}); setIssues({...i});
+    setSaving(true);
+    try { await dbSave({ schedules: s, issues: i }); }
+    catch(e) { alert("저장 실패: " + e.message); }
+    finally { setSaving(false); }
+  }
+
+  function openSchedModal(ds) {
+    const s = schedules[ds] || {};
+    setSchedModal(ds); setSchedAm(s.am || null); setSchedPm(s.pm || null);
+  }
+  async function handleSchedSave() {
+    if (!schedModal) return;
+    const s = { ...schedules };
+    if (!schedAm && !schedPm) delete s[schedModal];
+    else s[schedModal] = { am: schedAm, pm: schedPm };
+    setSchedModal(null); await save(s, issues);
+  }
+
+  function openIssueModal(ds, issue = null) {
+    setIssueModal({ dateStr: ds, issue });
+    setIssueCat(issue?.cat || "hospital");
+    setIssueMemo(issue?.memo || "");
+  }
+  async function handleIssueSave() {
+    if (!issueModal) return;
+    const { dateStr, issue } = issueModal;
+    const dayIssues = [...(issues[dateStr] || [])];
+    if (issue) {
+      const idx = dayIssues.findIndex(i => i.id === issue.id);
+      if (idx >= 0) dayIssues[idx] = { ...dayIssues[idx], cat: issueCat, memo: issueMemo };
+    } else {
+      dayIssues.push({ id: Date.now().toString(), cat: issueCat, memo: issueMemo });
+    }
+    setIssueModal(null);
+    await save(schedules, { ...issues, [dateStr]: dayIssues });
+  }
+  async function handleIssueDelete(ds, id) {
+    const dayIssues = (issues[ds] || []).filter(i => i.id !== id);
+    const newIssues = { ...issues };
+    if (dayIssues.length === 0) delete newIssues[ds]; else newIssues[ds] = dayIssues;
+    setIssueModal(null); await save(schedules, newIssues);
+  }
+
+  const today      = getTodayStr();
+  const [vy, vm]   = viewMonth.split("-").map(Number);
+  const dim        = getDaysInMonth(vy, vm);
+  const fdow       = getFirstDow(vy, vm);
+  const todaySched  = schedules[today] || {};
+  const todayIssues = issues[today] || [];
+
+  function prevMonth() {
+    const d = new Date(vy, vm-2, 1);
+    setViewMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); setSelectedDay(null);
+  }
+  function nextMonth() {
+    const d = new Date(vy, vm, 1);
+    setViewMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); setSelectedDay(null);
+  }
+
+  const mBg = { position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:"0 16px" };
+  const mCard = { background:"#fff", borderRadius:22, padding:"24px 20px", width:"100%", maxWidth:340, boxShadow:"0 10px 40px rgba(0,0,0,0.2)", maxHeight:"90vh", overflowY:"auto" };
+
+  if (loading) return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#F4F6FF" }}>
+      <div style={{ textAlign:"center", color:"#4F6EF7" }}>
+        <div style={{ fontSize:50, marginBottom:16 }}>👶</div>
+        <div style={{ fontSize:16, fontWeight:700 }}>불러오는 중...</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#F4F6FF", paddingBottom:50 }}>
+
+      {/* 저장 토스트 */}
+      {saving && (
+        <div style={{ position:"fixed", top:12, left:"50%", transform:"translateX(-50%)", background:"rgba(79,110,247,0.9)", color:"#fff", padding:"8px 20px", borderRadius:20, fontSize:13, fontWeight:600, zIndex:300 }}>
+          저장 중...
+        </div>
+      )}
+
+      {/* ── 담당 모달 ── */}
+      {schedModal && (
+        <div style={mBg} onClick={e => e.target===e.currentTarget && setSchedModal(null)}>
+          <div style={mCard}>
+            <div style={{ fontWeight:800, fontSize:17, color:"#1A1A2E", marginBottom:4 }}>등하원 담당 설정</div>
+            <div style={{ fontSize:13, color:"#999", marginBottom:20 }}>{schedModal.slice(5).replace("-","/")} ({getWeekday(schedModal)})</div>
+
+            <div style={{ fontSize:13, fontWeight:700, color:"#555", marginBottom:10 }}>🌅 오전 등원</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:4 }}>
+              {MEMBERS.map(m => <MemberBtn key={m.id} id={m.id} selected={schedAm===m.id} onSelect={id => setSchedAm(schedAm===id ? null : id)}/>)}
+            </div>
+            <div style={{ height:20 }}/>
+
+            <div style={{ fontSize:13, fontWeight:700, color:"#555", marginBottom:10 }}>🌇 오후 하원</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:24 }}>
+              {MEMBERS.map(m => <MemberBtn key={m.id} id={m.id} selected={schedPm===m.id} onSelect={id => setSchedPm(schedPm===id ? null : id)}/>)}
+            </div>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setSchedModal(null)} style={{ flex:1, padding:"13px", borderRadius:12, border:"1.5px solid #E0E0E0", background:"none", color:"#888", fontSize:14 }}>취소</button>
+              <button onClick={handleSchedSave} style={{ flex:1, padding:"13px", borderRadius:12, border:"none", background:"linear-gradient(135deg,#4F6EF7,#7B52E8)", color:"#fff", fontSize:14, fontWeight:700 }}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 이슈 모달 ── */}
+      {issueModal && (
+        <div style={mBg} onClick={e => e.target===e.currentTarget && setIssueModal(null)}>
+          <div style={mCard}>
+            <div style={{ fontWeight:800, fontSize:17, color:"#1A1A2E", marginBottom:4 }}>{issueModal.issue ? "이슈 수정" : "이슈 추가"}</div>
+            <div style={{ fontSize:13, color:"#999", marginBottom:18 }}>{issueModal.dateStr.slice(5).replace("-","/")} ({getWeekday(issueModal.dateStr)})</div>
+
+            <div style={{ fontSize:13, fontWeight:700, color:"#555", marginBottom:10 }}>카테고리</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:18 }}>
+              {ISSUE_CATS.map(c => (
+                <button key={c.id} onClick={() => setIssueCat(c.id)} style={{
+                  padding:"8px 14px", borderRadius:20, border:"none", fontSize:13, fontWeight:700,
+                  background: issueCat===c.id ? "#1A1A2E" : "#F0F0F8",
+                  color: issueCat===c.id ? "#fff" : "#555",
+                  transition:"all 0.15s"
+                }}>{c.emoji} {c.label}</button>
+              ))}
+            </div>
+
+            <div style={{ fontSize:13, fontWeight:700, color:"#555", marginBottom:8 }}>메모</div>
+            <input type="text" placeholder="내용 입력" value={issueMemo} onChange={e => setIssueMemo(e.target.value)}
+              onKeyDown={e => e.key==="Enter" && handleIssueSave()}
+              style={{ width:"100%", padding:"12px 14px", border:"1.5px solid #E8EAFF", borderRadius:12, fontSize:14, outline:"none", marginBottom:20 }}/>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setIssueModal(null)} style={{ flex:1, padding:"13px", borderRadius:12, border:"1.5px solid #E0E0E0", background:"none", color:"#888", fontSize:14 }}>취소</button>
+              {issueModal.issue && (
+                <button onClick={() => handleIssueDelete(issueModal.dateStr, issueModal.issue.id)}
+                  style={{ padding:"13px 14px", borderRadius:12, border:"none", background:"#FFF0F0", color:"#FF5C5C", fontSize:14, fontWeight:600 }}>삭제</button>
+              )}
+              <button onClick={handleIssueSave} style={{ flex:1, padding:"13px", borderRadius:12, border:"none", background:"linear-gradient(135deg,#FF6B9D,#FF4E8A)", color:"#fff", fontSize:14, fontWeight:700 }}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 헤더 ── */}
+      <div style={{ background:"linear-gradient(135deg,#4F6EF7,#7B52E8)", padding:"36px 22px 24px", color:"#fff" }}>
+        <div style={{ fontSize:12, opacity:0.75, marginBottom:4, letterSpacing:1 }}>태민이 등하원</div>
+        <div style={{ fontSize:28, fontWeight:800, letterSpacing:-0.5 }}>누가 데려가요? 👶</div>
+        <div style={{ marginTop:8, fontSize:12, opacity:0.7 }}>{today.replace(/-/g,".")} ({getWeekday(today)})</div>
+      </div>
+
+      {/* ── 탭 ── */}
+      <div style={{ display:"flex", background:"#fff", borderBottom:"1px solid #EBEBFF", position:"sticky", top:0, zIndex:10 }}>
+        {[["today","오늘"],["calendar","달력"]].map(([k,l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            flex:1, padding:"14px 0", border:"none", background:"none",
+            fontWeight:tab===k?700:400, color:tab===k?"#4F6EF7":"#999",
+            borderBottom:tab===k?"2.5px solid #4F6EF7":"2.5px solid transparent",
+            fontSize:14
+          }}>{l}</button>
+        ))}
+      </div>
+
+      <div style={{ padding:"18px 16px 0" }}>
+
+        {/* ════ 오늘 탭 ════ */}
+        {tab==="today" && (
+          <div style={{ maxWidth:440, margin:"0 auto", display:"flex", flexDirection:"column", gap:12 }}>
+
+            {/* 담당 카드 */}
+            <div style={{ background:"#fff", borderRadius:20, padding:"20px", boxShadow:"0 2px 20px rgba(79,110,247,0.1)" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+                <div style={{ fontWeight:800, fontSize:16, color:"#1A1A2E" }}>오늘 등하원 담당</div>
+                <button onClick={() => openSchedModal(today)} style={{ background:"#F0F4FF", border:"none", borderRadius:10, color:"#4F6EF7", fontSize:13, padding:"7px 14px", fontWeight:700 }}>✏️ 수정</button>
+              </div>
+
+              {[["am","🌅 오전 등원"],["pm","🌇 오후 하원"]].map(([slot, label]) => {
+                const m = getMember(todaySched[slot]);
+                return (
+                  <div key={slot} style={{ marginBottom: slot==="am" ? 12 : 0 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:"#BBB", marginBottom:8, letterSpacing:0.5 }}>{label}</div>
+                    {m ? (
+                      <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 16px", borderRadius:14, background:m.bg }}>
+                        <span style={{ fontSize:30 }}>{m.emoji}</span>
+                        <div>
+                          <div style={{ fontWeight:800, fontSize:20, color:m.color }}>{m.label}</div>
+                          <div style={{ fontSize:11, color:m.color, opacity:0.7 }}>{slot==="am"?"오전 등원 담당":"오후 하원 담당"}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div onClick={() => openSchedModal(today)} style={{ padding:"14px 16px", borderRadius:14, background:"#F8F8FF", border:"1.5px dashed #D0D4FF", cursor:"pointer", textAlign:"center", color:"#BBB", fontSize:14 }}>
+                        탭해서 담당자 지정
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 이슈 카드 */}
+            <div style={{ background:"#fff", borderRadius:20, padding:"20px", boxShadow:"0 2px 20px rgba(0,0,0,0.05)" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+                <div style={{ fontWeight:800, fontSize:15, color:"#1A1A2E" }}>오늘 이슈</div>
+                <button onClick={() => openIssueModal(today)} style={{ background:"#FFF0F7", border:"none", borderRadius:10, color:"#FF6B9D", fontSize:13, padding:"7px 14px", fontWeight:700 }}>+ 추가</button>
+              </div>
+              {todayIssues.length === 0 ? (
+                <div style={{ color:"#CCC", fontSize:14, textAlign:"center", padding:"12px 0" }}>등록된 이슈 없음</div>
+              ) : todayIssues.map(issue => {
+                const cat = ISSUE_CATS.find(c => c.id === issue.cat);
+                return (
+                  <div key={issue.id} onClick={() => openIssueModal(today, issue)}
+                    style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", borderRadius:12, background:"#F8F8FF", marginBottom:8, cursor:"pointer" }}>
+                    <span style={{ fontSize:20 }}>{cat?.emoji}</span>
+                    <div>
+                      <div style={{ fontWeight:700, fontSize:14, color:"#333" }}>{cat?.label}</div>
+                      {issue.memo && <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{issue.memo}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ════ 달력 탭 ════ */}
+        {tab==="calendar" && (
+          <div style={{ maxWidth:440, margin:"0 auto" }}>
+            <div style={{ background:"#fff", borderRadius:20, boxShadow:"0 4px 20px rgba(79,110,247,0.09)", marginBottom:14, overflow:"hidden" }}>
+
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 18px 12px", borderBottom:"1px solid #F2F2FF" }}>
+                <button onClick={prevMonth} style={{ background:"#F0F4FF", border:"none", borderRadius:10, width:36, height:36, fontSize:20, color:"#4F6EF7", display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+                <div style={{ fontWeight:800, fontSize:17, color:"#1A1A2E" }}>{vy}년 {vm}월</div>
+                <button onClick={nextMonth} style={{ background:"#F0F4FF", border:"none", borderRadius:10, width:36, height:36, fontSize:20, color:"#4F6EF7", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+              </div>
+
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", padding:"8px 10px 4px" }}>
+                {WEEK.map((w,i) => (
+                  <div key={w} style={{ textAlign:"center", fontSize:11, fontWeight:700, color:i===0?"#FF5C5C":i===6?"#4F6EF7":"#BBB", paddingBottom:2 }}>{w}</div>
+                ))}
+              </div>
+
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", padding:"0 6px 14px", gap:"4px 0" }}>
+                {Array.from({length:fdow}).map((_,i) => <div key={"e"+i}/>)}
+                {Array.from({length:dim}).map((_,i) => {
+                  const day = i+1;
+                  const ds  = `${viewMonth}-${String(day).padStart(2,"0")}`;
+                  const sched     = schedules[ds] || {};
+                  const dayIssues = issues[ds] || [];
+                  const isToday   = ds === today;
+                  const isSel     = ds === selectedDay;
+                  const dow       = (fdow+i) % 7;
+                  const amM       = getMember(sched.am);
+                  const pmM       = getMember(sched.pm);
+
+                  return (
+                    <div key={day} onClick={() => setSelectedDay(isSel ? null : ds)}
+                      style={{ display:"flex", flexDirection:"column", alignItems:"center", padding:"3px 2px",
+                        borderRadius:10, background:isSel?"#EEF2FF":"transparent", minHeight:60, cursor:"pointer" }}>
+                      <div style={{
+                        width:30, height:30, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center",
+                        fontSize:13, fontWeight:(amM||pmM)?700:400,
+                        background:isToday?"#4F6EF7":"transparent",
+                        color:isToday?"#fff":dow===0?"#FF5C5C":dow===6?"#4F6EF7":"#333",
+                      }}>{day}</div>
+                      <div style={{ display:"flex", gap:1, marginTop:2, flexWrap:"wrap", justifyContent:"center" }}>
+                        {amM && <span style={{ fontSize:12, lineHeight:1.2 }}>{amM.emoji}</span>}
+                        {pmM && <span style={{ fontSize:12, lineHeight:1.2 }}>{pmM.emoji}</span>}
+                      </div>
+                      {dayIssues.length > 0 && (
+                        <div style={{ width:5, height:5, borderRadius:"50%", background:"#FF6B9D", marginTop:2 }}/>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 범례 */}
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:14, paddingLeft:2 }}>
+              {MEMBERS.map(m => (
+                <div key={m.id} style={{ display:"flex", alignItems:"center", gap:4, fontSize:12, color:"#666" }}>
+                  <span>{m.emoji}</span>{m.label}
+                </div>
+              ))}
+              <div style={{ display:"flex", alignItems:"center", gap:4, fontSize:12, color:"#666" }}>
+                <div style={{ width:6, height:6, borderRadius:"50%", background:"#FF6B9D" }}/>이슈
+              </div>
+            </div>
+
+            {/* 선택된 날짜 상세 */}
+            {selectedDay && (
+              <div style={{ background:"#fff", borderRadius:18, padding:"18px", boxShadow:"0 2px 16px rgba(0,0,0,0.07)", border:"1.5px solid #EBEBFF" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                  <div style={{ fontWeight:800, fontSize:15, color:"#1A1A2E" }}>
+                    {selectedDay.slice(5).replace("-","/")} ({getWeekday(selectedDay)})
+                  </div>
+                  <button onClick={() => openSchedModal(selectedDay)} style={{ background:"#F0F4FF", border:"none", borderRadius:10, color:"#4F6EF7", fontSize:13, padding:"7px 12px", fontWeight:700 }}>✏️ 담당 수정</button>
+                </div>
+
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+                  {[["am","🌅 오전 등원"],["pm","🌇 오후 하원"]].map(([slot, label]) => {
+                    const m = getMember(schedules[selectedDay]?.[slot]);
+                    return (
+                      <div key={slot} style={{ padding:"12px", borderRadius:14, background:m?m.bg:"#F8F8FF", border:m?"none":"1.5px dashed #DDD" }}>
+                        <div style={{ fontSize:10, fontWeight:700, color:m?m.color:"#CCC", marginBottom:6 }}>{label}</div>
+                        {m ? (
+                          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                            <span style={{ fontSize:22 }}>{m.emoji}</span>
+                            <span style={{ fontWeight:800, fontSize:15, color:m.color }}>{m.label}</span>
+                          </div>
+                        ) : <div style={{ color:"#CCC", fontSize:13 }}>미지정</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ borderTop:"1px solid #F0F0F8", paddingTop:14 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#555" }}>이슈</div>
+                    <button onClick={() => openIssueModal(selectedDay)} style={{ background:"#FFF0F7", border:"none", borderRadius:8, color:"#FF6B9D", fontSize:13, padding:"6px 12px", fontWeight:700 }}>+ 추가</button>
+                  </div>
+                  {(issues[selectedDay]||[]).length === 0 ? (
+                    <div style={{ color:"#CCC", fontSize:13 }}>이슈 없음</div>
+                  ) : (issues[selectedDay]||[]).map(issue => {
+                    const cat = ISSUE_CATS.find(c => c.id === issue.cat);
+                    return (
+                      <div key={issue.id} onClick={() => openIssueModal(selectedDay, issue)}
+                        style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:10, background:"#F8F8FF", marginBottom:6, cursor:"pointer" }}>
+                        <span style={{ fontSize:18 }}>{cat?.emoji}</span>
+                        <div>
+                          <span style={{ fontWeight:700, fontSize:13, color:"#333" }}>{cat?.label}</span>
+                          {issue.memo && <span style={{ fontSize:12, color:"#888", marginLeft:6 }}>{issue.memo}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("app")).render(<App/>);
+</script>
+</body>
+</html>
