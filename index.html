@@ -78,21 +78,11 @@ function getMember(id) { return MEMBERS.find(m=>m.id===id); }
 function getCat(id) { return ISSUE_CATS.find(c=>c.id===id); }
 
 // ── JSONBin ──
+const FIXED_BIN_ID = "6a3a065df5f4af5e2920dadb";
+
 async function dbLoad() {
-  let binId = localStorage.getItem(BIN_ID_KEY);
-  if (!binId) {
-    const res = await fetch("https://api.jsonbin.io/v3/b", {
-      method:"POST",
-      headers:{"Content-Type":"application/json","X-Master-Key":MASTER_KEY,"X-Bin-Name":"taemin-calendar","X-Private":"false"},
-      body: JSON.stringify({schedules:{},issues:{}})
-    });
-    const data = await res.json();
-    binId = data.metadata.id;
-    localStorage.setItem(BIN_ID_KEY, binId);
-    alert("📌 Bin ID: " + binId + "\n\n이 ID를 저장해 두세요!\n남편 폰에서도 같은 데이터를 쓰려면 이 ID가 필요해요.");
-    return {schedules:{},issues:{}};
-  }
-  const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+  localStorage.setItem(BIN_ID_KEY, FIXED_BIN_ID);
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${FIXED_BIN_ID}/latest`, {
     headers:{"X-Master-Key":MASTER_KEY}
   });
   const data = await res.json();
