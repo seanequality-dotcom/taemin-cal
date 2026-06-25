@@ -51,7 +51,7 @@ const MEMBERS = [
 const ISSUE_CATS = [
   { id:"hospital", label:"병원",     emoji:"🏥" },
   { id:"outing",   label:"외출",     emoji:"🚗" },
-  { id:"school",   label:"어린이집", emoji:"🏫" },
+  { id:"school",   label:"가정보육", emoji:"🏠" },
   { id:"etc",      label:"기타",     emoji:"📝" },
 ];
 const WEEK = ["일","월","화","수","목","금","토"];
@@ -97,8 +97,37 @@ async function dbLoad() {
     headers:{"X-Master-Key":MASTER_KEY}
   });
   const data = await res.json();
-  return data.record || {schedules:{},issues:{},notice:""};
+  return data.record || {schedules:{},issues:{},notice:"",logs:[]};
 }
+
+// ── 로그 ──
+async function getLocationLabel() {
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    const d = await res.json();
+    return `${d.city||""} ${d.region||""}`.trim() || "위치 불명";
+  } catch { return "위치 불명"; }
+}
+function getDeviceLabel() {
+  const ua = navigator.userAgent;
+  if (/iPhone/.test(ua)) return "📱 iPhone";
+  if (/iPad/.test(ua)) return "📱 iPad";
+  if (/Android/.test(ua)) return "📱 Android";
+  if (/Mac/.test(ua)) return "💻 Mac";
+  if (/Windows/.test(ua)) return "💻 Windows";
+  return "🖥️ 기타";
+}
+async function addLog(summary) {
+  const now = new Date();
+  const timeStr = now.toLocaleString("ko-KR", {month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});
+  const device = getDeviceLabel();
+  const location = await getLocationLabel();
+  const entry = { time: timeStr, summary, device, location };
+  if (!DB.logs) DB.logs = [];
+  DB.logs.unshift(entry);
+  if (DB.logs.length > 100) DB.logs = DB.logs.slice(0, 100);
+}
+
 async function dbSave() {
   showToast("저장 중...");
   try {
@@ -112,7 +141,7 @@ async function dbSave() {
 }
 
 // ── 상태 ──
-let DB = { schedules:{}, issues:{}, notice:"" };
+let DB = { schedules:{}, issues:{}, notice:"", logs:[] };
 let currentTab = "today";
 let currentMonth = getMonthStr(new Date());
 let selectedDay = null;
@@ -146,7 +175,10 @@ function showToast(msg, duration=2000) {
 function onNoticeInput(val) {
   DB.notice = val;
   clearTimeout(noticeSaveTimer);
-  noticeSaveTimer = setTimeout(()=>dbSave(), 1500);
+  noticeSaveTimer = setTimeout(async()=>{
+    await addLog("📌 공유 메모 수정");
+    await dbSave();
+  }, 1500);
 }
 
 // ── 렌더 ──
@@ -166,9 +198,10 @@ function buildApp() {
     <div class="tab-bar">
       <button class="tab-btn ${currentTab==="today"?"active":""}" onclick="switchTab('today')">오늘</button>
       <button class="tab-btn ${currentTab==="calendar"?"active":""}" onclick="switchTab('calendar')">달력</button>
+      <button class="tab-btn ${currentTab==="logs"?"active":""}" onclick="switchTab('logs')">로그</button>
     </div>
     <div style="padding:18px 16px 0;max-width:440px;margin:0 auto">
-      ${currentTab==="today" ? buildToday(today) : buildCalendar()}
+      ${currentTab==="today" ? buildToday(today) : currentTab==="calendar" ? buildCalendar() : buildLogs()}
     </div>
   </div>
   ${buildSchedModal()}
@@ -367,6 +400,33 @@ function buildIssueModal() {
 }
 
 // ── 핸들러 ──
+
+// ── 로그 탭 ──
+function buildLogs() {
+  const logs = DB.logs || [];
+  return `
+  <div style="max-width:440px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-weight:800;font-size:16px;color:#1A1A2E">변경 로그</div>
+      <div style="font-size:12px;color:#BBB">최근 ${logs.length}건</div>
+    </div>
+    ${logs.length===0
+      ? `<div style="text-align:center;padding:40px 0;color:#CCC;font-size:14px">아직 변경 기록이 없어요</div>`
+      : logs.map((l,i)=>`
+        <div style="background:#fff;border-radius:16px;padding:14px 16px;margin-bottom:10px;box-shadow:0 2px 12px rgba(0,0,0,0.05)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+            <div style="font-size:14px;font-weight:700;color:#1A1A2E;flex:1;line-height:1.4">${l.summary}</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span style="font-size:11px;color:#888;background:#F4F6FF;padding:3px 8px;border-radius:10px">🕐 ${l.time}</span>
+            <span style="font-size:11px;color:#888;background:#F4F6FF;padding:3px 8px;border-radius:10px">${l.device}</span>
+            <span style="font-size:11px;color:#888;background:#F4F6FF;padding:3px 8px;border-radius:10px">📍 ${l.location}</span>
+          </div>
+        </div>`).join("")
+    }
+  </div>`;
+}
+
 function switchTab(tab) { currentTab=tab; render(); }
 function selectDay(ds) { selectedDay=(selectedDay===ds?null:ds); render(); }
 function prevMonth() {
@@ -407,15 +467,22 @@ async function saveIssueModal() {
   if(!issueModal) return;
   const {ds,issueId}=issueModal;
   const memo=document.getElementById("issue-memo-input")?.value||issueMemo;
+  const catLabel=getCat(issueCat)?.label||issueCat;
   let dayIssues=[...(DB.issues[ds]||[])];
   if(issueId){const idx=dayIssues.findIndex(i=>i.id===issueId);if(idx>=0)dayIssues[idx]={...dayIssues[idx],cat:issueCat,memo};}
   else dayIssues.push({id:Date.now().toString(),cat:issueCat,memo});
-  DB.issues[ds]=dayIssues; issueModal=null; render(); await dbSave();
+  DB.issues[ds]=dayIssues; issueModal=null; render();
+  await addLog(`⚠️ ${ds.slice(5).replace("-","/")} 이슈 ${issueId?"수정":"추가"} — ${catLabel}${memo?" ("+memo+")":""}`);
+  await dbSave();
 }
 async function deleteIssue(ds,id) {
+  const iss=(DB.issues[ds]||[]).find(i=>i.id===id);
+  const catLabel=getCat(iss?.cat)?.label||"";
   DB.issues[ds]=(DB.issues[ds]||[]).filter(i=>i.id!==id);
   if(!DB.issues[ds].length) delete DB.issues[ds];
-  issueModal=null; render(); await dbSave();
+  issueModal=null; render();
+  await addLog(`🗑️ ${ds.slice(5).replace("-","/")} 이슈 삭제 — ${catLabel}`);
+  await dbSave();
 }
 
 // ── 초기화 ──
